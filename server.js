@@ -6,10 +6,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ========== قاعدة البيانات ==========
 const db = new Database('./database.db');
 
-// إنشاء الجدول
 db.exec(`
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -36,8 +34,6 @@ db.exec(`
 `);
 
 console.log('✅ متصل بقاعدة البيانات SQLite');
-
-// ========== Routes ==========
 
 app.get('/', (req, res) => {
     res.send('🚀 سيرفر رؤية شغال!');
@@ -147,7 +143,6 @@ app.delete('/api/users/:id', (req, res) => {
     }
 });
 
-// ========== تشغيل السيرفر ==========
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
     console.log(`🚀 السيرفر شغال على http://localhost:${PORT}`);
