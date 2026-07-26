@@ -1,17 +1,15 @@
 const express = require('express');
 const cors = require('cors');
 const Database = require('better-sqlite3');
-const path = require('path');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ========== قاعدة البيانات SQLite ==========
-const dbPath = './database.db';
-const db = new Database(dbPath);
+// ========== قاعدة البيانات ==========
+const db = new Database('./database.db');
 
-// إنشاء الجدول (لو مش موجود)
+// إنشاء الجدول
 db.exec(`
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,19 +39,16 @@ console.log('✅ متصل بقاعدة البيانات SQLite');
 
 // ========== Routes ==========
 
-// الصفحة الرئيسية
 app.get('/', (req, res) => {
     res.send('🚀 سيرفر رؤية شغال!');
 });
 
-// جلب كل المستخدمين
 app.get('/api/users', (req, res) => {
     try {
         const users = db.prepare('SELECT * FROM users ORDER BY points DESC').all();
         users.forEach(u => {
             try { u.completedTasks = JSON.parse(u.completedTasks); } catch(e) { u.completedTasks = {}; }
             try { u.badges = JSON.parse(u.badges); } catch(e) { u.badges = {}; }
-            try { u.weakSubjects = JSON.parse(u.weakSubjects); } catch(e) { u.weakSubjects = []; }
         });
         res.json(users);
     } catch (err) {
@@ -61,7 +56,6 @@ app.get('/api/users', (req, res) => {
     }
 });
 
-// تسجيل مستخدم جديد
 app.post('/api/users/register', (req, res) => {
     const { name, email, password, path, year } = req.body;
     if (!name || !email || !password) {
@@ -79,7 +73,6 @@ app.post('/api/users/register', (req, res) => {
     }
 });
 
-// تسجيل الدخول
 app.post('/api/users/login', (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) {
@@ -98,7 +91,6 @@ app.post('/api/users/login', (req, res) => {
     }
 });
 
-// جلب مستخدم واحد
 app.get('/api/users/:id', (req, res) => {
     try {
         const stmt = db.prepare('SELECT * FROM users WHERE id = ?');
@@ -113,7 +105,6 @@ app.get('/api/users/:id', (req, res) => {
     }
 });
 
-// تحديث مستخدم
 app.put('/api/users/:id', (req, res) => {
     const { name, path, year, specialization, weakSubjects, preferredTime, goalScore, onboardingDone, points, streak, progress, completedTasks, badges, lastPathChange, avatarUrl } = req.body;
     const updates = [], values = [];
@@ -146,7 +137,6 @@ app.put('/api/users/:id', (req, res) => {
     }
 });
 
-// حذف مستخدم
 app.delete('/api/users/:id', (req, res) => {
     try {
         const stmt = db.prepare('DELETE FROM users WHERE id = ?');
