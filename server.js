@@ -8,7 +8,8 @@ app.use(cors());
 app.use(express.json());
 
 // ========== قاعدة البيانات SQLite ==========
-const dbPath = path.join(__dirname, 'database.db');
+// ✅ استخدم './database.db' عشان يشتغل على Railway
+const dbPath = './database.db';
 const db = new sqlite3.Database(dbPath, (err) => {
     if (err) {
         console.log('❌ خطأ في فتح قاعدة البيانات:', err.message);
@@ -17,7 +18,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
     }
 });
 
-// إنشاء الجدول
+// إنشاء الجدول (لو مش موجود)
 db.run(`
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -157,4 +158,5 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
     console.log(`🚀 السيرفر شغال على http://localhost:${PORT}`);
     console.log('✅ قاعدة البيانات: SQLite');
+    console.log('📁 مسار قاعدة البيانات:', dbPath);
 });
