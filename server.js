@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const sqlite3 = require('sqlite3').verbose();
+const Database = require('better-sqlite3');
 const path = require('path');
 
 const app = express();
@@ -8,18 +8,11 @@ app.use(cors());
 app.use(express.json());
 
 // ========== قاعدة البيانات SQLite ==========
-// ✅ استخدم './database.db' عشان يشتغل على Railway
 const dbPath = './database.db';
-const db = new sqlite3.Database(dbPath, (err) => {
-    if (err) {
-        console.log('❌ خطأ في فتح قاعدة البيانات:', err.message);
-    } else {
-        console.log('✅ متصل بقاعدة البيانات SQLite');
-    }
-});
+const db = new Database(dbPath);
 
 // إنشاء الجدول (لو مش موجود)
-db.run(`
+db.exec(`
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
@@ -44,6 +37,8 @@ db.run(`
     )
 `);
 
+console.log('✅ متصل بقاعدة البيانات SQLite');
+
 // ========== Routes ==========
 
 // الصفحة الرئيسية
@@ -53,15 +48,17 @@ app.get('/', (req, res) => {
 
 // جلب كل المستخدمين
 app.get('/api/users', (req, res) => {
-    db.all(`SELECT * FROM users ORDER BY points DESC`, (err, users) => {
-        if (err) return res.status(400).json({ error: err.message });
+    try {
+        const users = db.prepare('SELECT * FROM users ORDER BY points DESC').all();
         users.forEach(u => {
             try { u.completedTasks = JSON.parse(u.completedTasks); } catch(e) { u.completedTasks = {}; }
             try { u.badges = JSON.parse(u.badges); } catch(e) { u.badges = {}; }
             try { u.weakSubjects = JSON.parse(u.weakSubjects); } catch(e) { u.weakSubjects = []; }
         });
         res.json(users);
-    });
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
 });
 
 // تسجيل مستخدم جديد
@@ -70,17 +67,16 @@ app.post('/api/users/register', (req, res) => {
     if (!name || !email || !password) {
         return res.status(400).json({ error: 'الاسم والإيميل وكلمة المرور مطلوبة' });
     }
-    db.run(
-        `INSERT INTO users (name, email, password, path, year) VALUES (?, ?, ?, ?, ?)`,
-        [name, email, password, path || 'medicine', year || '2'],
-        function(err) {
-            if (err) {
-                if (err.message.includes('UNIQUE')) return res.status(400).json({ error: 'الإيميل مستخدم' });
-                return res.status(400).json({ error: err.message });
-            }
-            res.status(201).json({ message: '✅ تم التسجيل', id: this.lastID });
-        }
-    );
+    try {
+        const stmt = db.prepare(
+            `INSERT INTO users (name, email, password, path, year) VALUES (?, ?, ?, ?, ?)`
+        );
+        const info = stmt.run(name, email, password, path || 'medicine', year || '2');
+        res.status(201).json({ message: '✅ تم التسجيل', id: info.lastInsertRowid });
+    } catch (err) {
+        if (err.message.includes('UNIQUE')) return res.status(400).json({ error: 'الإيميل مستخدم' });
+        res.status(400).json({ error: err.message });
+    }
 });
 
 // تسجيل الدخول
@@ -89,30 +85,32 @@ app.post('/api/users/login', (req, res) => {
     if (!email || !password) {
         return res.status(400).json({ error: 'الإيميل وكلمة المرور مطلوبة' });
     }
-    db.get(
-        `SELECT * FROM users WHERE email = ? AND password = ?`,
-        [email, password],
-        (err, user) => {
-            if (err) return res.status(400).json({ error: err.message });
-            if (!user) return res.status(401).json({ error: 'بيانات غير صحيحة' });
-            try { user.completedTasks = JSON.parse(user.completedTasks); } catch(e) { user.completedTasks = {}; }
-            try { user.badges = JSON.parse(user.badges); } catch(e) { user.badges = {}; }
-            delete user.password;
-            res.json({ message: '✅ تم تسجيل الدخول', user });
-        }
-    );
+    try {
+        const stmt = db.prepare('SELECT * FROM users WHERE email = ? AND password = ?');
+        const user = stmt.get(email, password);
+        if (!user) return res.status(401).json({ error: 'بيانات غير صحيحة' });
+        try { user.completedTasks = JSON.parse(user.completedTasks); } catch(e) { user.completedTasks = {}; }
+        try { user.badges = JSON.parse(user.badges); } catch(e) { user.badges = {}; }
+        delete user.password;
+        res.json({ message: '✅ تم تسجيل الدخول', user });
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
 });
 
 // جلب مستخدم واحد
 app.get('/api/users/:id', (req, res) => {
-    db.get(`SELECT * FROM users WHERE id = ?`, [req.params.id], (err, user) => {
-        if (err) return res.status(400).json({ error: err.message });
+    try {
+        const stmt = db.prepare('SELECT * FROM users WHERE id = ?');
+        const user = stmt.get(req.params.id);
         if (!user) return res.status(404).json({ error: 'المستخدم غير موجود' });
         try { user.completedTasks = JSON.parse(user.completedTasks); } catch(e) { user.completedTasks = {}; }
         try { user.badges = JSON.parse(user.badges); } catch(e) { user.badges = {}; }
         delete user.password;
         res.json(user);
-    });
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
 });
 
 // تحديث مستخدم
@@ -139,24 +137,29 @@ app.put('/api/users/:id', (req, res) => {
     if (updates.length === 0) return res.status(400).json({ error: 'لا توجد بيانات للتحديث' });
 
     values.push(req.params.id);
-    db.run(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`, values, function(err) {
-        if (err) return res.status(400).json({ error: err.message });
+    try {
+        const stmt = db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`);
+        stmt.run(...values);
         res.json({ message: '✅ تم التحديث' });
-    });
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
 });
 
 // حذف مستخدم
 app.delete('/api/users/:id', (req, res) => {
-    db.run(`DELETE FROM users WHERE id = ?`, [req.params.id], function(err) {
-        if (err) return res.status(400).json({ error: err.message });
+    try {
+        const stmt = db.prepare('DELETE FROM users WHERE id = ?');
+        stmt.run(req.params.id);
         res.json({ message: '✅ تم الحذف' });
-    });
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
 });
 
 // ========== تشغيل السيرفر ==========
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
     console.log(`🚀 السيرفر شغال على http://localhost:${PORT}`);
-    console.log('✅ قاعدة البيانات: SQLite');
-    console.log('📁 مسار قاعدة البيانات:', dbPath);
+    console.log('✅ قاعدة البيانات: SQLite (better-sqlite3)');
 });
